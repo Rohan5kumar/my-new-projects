@@ -1,0 +1,815 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Genesis Orbit: Multiplayer Uplink</title>
+
+    <!-- [FIREBASE] Compatibility SDKs (Required for 'firebase' namespace) -->
+    <script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-firestore-compat.js"></script>
+
+    <!-- [ADSENSE] Script -->
+    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-YOUR_PUBLISHER_ID_HERE"
+     crossorigin="anonymous"></script>
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+
+    <style>
+        :root {
+            --bg-color: #050505;
+            --panel-bg: rgba(5, 10, 15, 0.9);
+            --accent-cyan: #00f3ff;
+            --accent-gold: #ffe600;
+            --accent-alert: #ff3333;
+            --accent-net: #00ff66; /* Green for network */
+            --ad-height: 90px;
+        }
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: var(--bg-color);
+            font-family: 'Share Tech Mono', monospace;
+            user-select: none;
+            touch-action: none;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            color: #fff;
+        }
+
+        /* --- CRT SCANLINE OVERLAY --- */
+        body::after {
+            content: " ";
+            display: block;
+            position: absolute;
+            top: 0; left: 0; bottom: 0; right: 0;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+            z-index: 100;
+            background-size: 100% 2px, 3px 100%;
+            pointer-events: none;
+        }
+
+        /* --- UI LAYER --- */
+        #ui-layer {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            width: 280px;
+            pointer-events: none;
+            z-index: 20;
+        }
+
+        .hud-panel {
+            background: var(--panel-bg);
+            border: 1px solid var(--accent-cyan);
+            border-left: 4px solid var(--accent-cyan);
+            padding: 15px;
+            box-shadow: 0 0 15px rgba(0, 243, 255, 0.15);
+            margin-bottom: 10px;
+            clip-path: polygon(0 0, 100% 0, 100% 85%, 90% 100%, 0 100%);
+        }
+
+        h1 {
+            margin: 0 0 10px 0;
+            color: var(--accent-cyan);
+            font-family: 'Orbitron', sans-serif;
+            font-size: 18px;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            border-bottom: 1px solid rgba(0, 243, 255, 0.3);
+            padding-bottom: 5px;
+        }
+
+        .data-row {
+            display: flex;
+            justify-content: space-between;
+            font-size: 13px;
+            color: #aaa;
+            margin-bottom: 4px;
+        }
+
+        .highlight { color: #fff; text-shadow: 0 0 5px var(--accent-cyan); }
+        .legend-star { color: var(--accent-gold); }
+        .legend-planet { color: var(--accent-cyan); }
+        .legend-net { color: var(--accent-net); }
+        
+        #high-score-box {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            text-align: right;
+            pointer-events: none;
+            z-index: 20;
+        }
+        
+        .big-number {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 24px;
+            color: var(--accent-gold);
+        }
+
+        /* Network Status Indicator */
+        #net-status {
+            font-size: 10px;
+            color: #555;
+            margin-top: 5px;
+            text-transform: uppercase;
+        }
+        #net-status.online { color: var(--accent-net); text-shadow: 0 0 5px var(--accent-net); }
+
+        /* --- START SCREEN --- */
+        #start-screen {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: #000;
+            z-index: 200;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            transition: opacity 0.8s;
+        }
+        
+        .start-btn {
+            background: transparent;
+            border: 2px solid var(--accent-cyan);
+            color: var(--accent-cyan);
+            padding: 15px 40px;
+            font-family: 'Orbitron', sans-serif;
+            font-size: 20px;
+            cursor: pointer;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            transition: 0.3s;
+            box-shadow: 0 0 20px rgba(0, 243, 255, 0.2);
+        }
+        
+        .start-btn:hover {
+            background: var(--accent-cyan);
+            color: #000;
+            box-shadow: 0 0 40px rgba(0, 243, 255, 0.6);
+        }
+
+        /* --- SCORE POPUP --- */
+        #score-display {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            font-family: 'Orbitron', sans-serif;
+            font-size: 120px;
+            font-weight: 900;
+            opacity: 0;
+            pointer-events: none;
+            z-index: 50;
+            text-shadow: 0 0 20px rgba(0,0,0,1);
+        }
+        .s-perfect { color: var(--accent-gold); text-shadow: 0 0 30px var(--accent-gold); }
+        .s-good { color: var(--accent-cyan); text-shadow: 0 0 30px var(--accent-cyan); }
+        .s-bad { color: var(--accent-alert); }
+
+        /* --- CANVAS --- */
+        #canvas {
+            width: 100vw;
+            display: block;
+            cursor: crosshair;
+        }
+
+        /* --- ADSENSE TERMINAL --- */
+        #ad-container {
+            width: 100%;
+            height: var(--ad-height);
+            background-color: #080808;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 30;
+            border-top: 2px solid #333;
+            position: relative;
+        }
+
+        #ad-container::before {
+            content: "/// SYSTEM AD-LINK ///";
+            position: absolute;
+            top: -14px;
+            right: 20px;
+            font-size: 10px;
+            background: #080808;
+            color: #666;
+            padding: 0 10px;
+            border: 1px solid #333;
+            border-bottom: none;
+        }
+        
+        #mute-btn {
+            position: absolute;
+            bottom: 110px; 
+            right: 20px;
+            z-index: 50;
+            background: rgba(0,0,0,0.5);
+            border: 1px solid #555;
+            color: #555;
+            padding: 5px 10px;
+            cursor: pointer;
+            font-size: 10px;
+        }
+        #mute-btn.active { color: var(--accent-cyan); border-color: var(--accent-cyan); }
+    </style>
+</head>
+<body>
+
+    <!-- START SCREEN -->
+    <div id="start-screen">
+        <h1 style="font-size: 40px; margin-bottom: 10px; color: #fff; text-shadow: 0 0 20px cyan;">GENESIS ORBIT</h1>
+        <p style="color: #888; margin-bottom: 5px;">MULTIPLAYER UPLINK DETECTED</p>
+        <p style="color: #666; margin-bottom: 40px; font-size: 12px;">DRAW PERFECT CIRCLES TO GENERATE A SHARED SOLAR SYSTEM</p>
+        <button id="start-btn-el" class="start-btn">INITIALIZE SYSTEM</button>
+    </div>
+
+    <!-- UI LAYER -->
+    <div id="ui-layer">
+        <div class="hud-panel">
+            <h1>Genesis Protocol</h1>
+            <div class="data-row">
+                <span>TARGET:</span>
+                <span class="highlight">PERFECT CIRCLE</span>
+            </div>
+            <div class="data-row">
+                <span>&gt; 95% ACCURACY</span>
+                <span class="legend-star">[ STAR ]</span>
+            </div>
+            <div class="data-row">
+                <span>80% - 94%</span>
+                <span class="legend-planet">[ PLANET ]</span>
+            </div>
+            <div class="data-row">
+                <span>CONNECTION:</span>
+                <span id="net-status">OFFLINE</span>
+            </div>
+            <div class="data-row">
+                <span>ACTIVE BODIES:</span>
+                <span id="body-count" class="highlight">0</span>
+            </div>
+        </div>
+    </div>
+
+    <div id="high-score-box">
+        <div style="font-size: 12px; color: #888;">BEST ACCURACY</div>
+        <div id="best-score" class="big-number">0%</div>
+    </div>
+
+    <div id="score-display">0%</div>
+    <button id="mute-btn">AUDIO: OFF</button>
+    
+    <canvas id="canvas"></canvas>
+
+    <!-- ADSENSE TERMINAL -->
+    <div id="ad-container">
+        <!-- ADSENSE PLACEHOLDER -->
+        <div style="text-align: center; opacity: 0.3;">
+            <div style="font-size: 10px; letter-spacing: 2px;">ADVERTISEMENT MODULE</div>
+            <div style="font-size: 20px;">[ . . . ]</div>
+        </div>
+    </div>
+
+<script>
+(function() {
+    // --- FIREBASE INIT ---
+    // Note: The execution environment provides __firebase_config and __app_id
+    const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+    const appId = typeof __app_id !== 'undefined' ? __app_id : 'genesis-orbit-default';
+    let db, auth;
+    let currentUser = null;
+
+    if (firebaseConfig) {
+        // Using Compat syntax
+        const app = firebase.initializeApp(firebaseConfig);
+        auth = firebase.auth();
+        db = firebase.firestore(app);
+    } else {
+        console.warn("Firebase config not found. Running in offline mode.");
+    }
+
+    // --- DOM ELEMENTS ---
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const scoreDisplay = document.getElementById('score-display');
+    const bodyCountDisplay = document.getElementById('body-count');
+    const bestScoreDisplay = document.getElementById('best-score');
+    const adContainer = document.getElementById('ad-container');
+    const startScreen = document.getElementById('start-screen');
+    const muteBtn = document.getElementById('mute-btn');
+    const startBtnEl = document.getElementById('start-btn-el');
+    const netStatusEl = document.getElementById('net-status');
+
+    // --- GAME STATE ---
+    let width, height;
+    let isDrawing = false;
+    let gameActive = false;
+    let audioEnabled = false;
+    let points = [];
+    let bodies = [];
+    let particles = [];
+    let stars = []; 
+    let bestScore = localStorage.getItem('genesis_best') || 0;
+    
+    // Config
+    const G = 0.5;
+    const COLORS = {
+        bg: '#050505',
+        star: '#ffe600',
+        planet: '#00f3ff',
+        debris: '#ff3333',
+        netBody: '#00ff66',
+        trail: 'rgba(255, 255, 255, 0.2)'
+    };
+
+    bestScoreDisplay.innerText = bestScore + "%";
+
+    // --- AUDIO ENGINE ---
+    const Audio = {
+        ctx: null,
+        init: function() {
+            window.AudioContext = window.AudioContext || window.webkitAudioContext;
+            this.ctx = new AudioContext();
+        },
+        playTone: function(freq, type, duration, vol=0.1) {
+            if (!audioEnabled || !this.ctx) return;
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.type = type;
+            osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+            gain.gain.setValueAtTime(0, this.ctx.currentTime);
+            gain.gain.linearRampToValueAtTime(vol, this.ctx.currentTime + 0.01);
+            gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + duration);
+            osc.connect(gain);
+            gain.connect(this.ctx.destination);
+            osc.start();
+            osc.stop(this.ctx.currentTime + duration);
+        },
+        playSpawn: function(isStar) {
+            if(isStar) {
+                this.playTone(100, 'sawtooth', 0.5, 0.2); 
+                setTimeout(() => this.playTone(200, 'sine', 0.5, 0.2), 100);
+            } else {
+                this.playTone(400, 'sine', 0.3, 0.1); 
+            }
+        },
+        playNetSpawn: function() {
+            // Distinct sound for incoming network objects
+            this.playTone(800, 'triangle', 0.2, 0.05); 
+            setTimeout(() => this.playTone(600, 'triangle', 0.2, 0.05), 100);
+        },
+        playDraw: function() {
+            this.playTone(800 + Math.random()*200, 'square', 0.05, 0.02);
+        },
+        playFail: function() {
+            this.playTone(150, 'sawtooth', 0.3, 0.1);
+        }
+    };
+
+    // --- NETWORK LOGIC ---
+    function initNetwork() {
+        if (!auth || !db) return;
+
+        // 1. Authenticate
+        // Fallback to anonymous auth
+        const authPromise = (typeof __initial_auth_token !== 'undefined' && __initial_auth_token)
+            ? auth.signInWithCustomToken(__initial_auth_token)
+            : auth.signInAnonymously();
+
+        authPromise
+            .then((userCredential) => {
+                currentUser = userCredential.user;
+                netStatusEl.innerText = "UPLINK ACTIVE";
+                netStatusEl.classList.add('online');
+                startFirestoreListener();
+            })
+            .catch((error) => {
+                console.error("Auth failed", error);
+                netStatusEl.innerText = "OFFLINE (AUTH FAIL)";
+            });
+    }
+
+    function startFirestoreListener() {
+        // Path: artifacts/{appId}/public/data/bodies
+        // We query without complex filters to avoid index requirements
+        const bodiesRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('bodies');
+        
+        bodiesRef.onSnapshot((snapshot) => {
+            snapshot.docChanges().forEach((change) => {
+                if (change.type === "added") {
+                    const data = change.doc.data();
+                    // Only add if it's NOT mine (I already added mine locally)
+                    if (currentUser && data.creatorId !== currentUser.uid) {
+                        spawnRemoteBody(data);
+                    }
+                }
+            });
+        }, (error) => {
+            console.error("Listener error:", error);
+        });
+    }
+
+    function broadcastBody(bodyData) {
+        if (!db || !currentUser) return;
+        
+        const bodiesRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('bodies');
+        
+        bodiesRef.add({
+            ...bodyData,
+            creatorId: currentUser.uid,
+            timestamp: firebase.firestore.FieldValue.serverTimestamp()
+        }).catch(err => console.error("Broadcast failed", err));
+    }
+
+    // --- GAME ACTIONS ---
+
+    function toggleAudio() {
+        audioEnabled = !audioEnabled;
+        muteBtn.innerText = audioEnabled ? "AUDIO: ON" : "AUDIO: OFF";
+        muteBtn.classList.toggle('active');
+        if(audioEnabled && !Audio.ctx) Audio.init();
+    }
+
+    function startGame() {
+        startScreen.style.opacity = 0;
+        setTimeout(() => {
+            startScreen.style.display = 'none';
+            gameActive = true;
+            toggleAudio();
+            resize();
+            initNetwork(); // Connect to Multiplayer
+        }, 800);
+    }
+
+    startBtnEl.addEventListener('click', startGame);
+    muteBtn.addEventListener('click', toggleAudio);
+
+    // --- RESIZE & INIT ---
+    function resize() {
+        width = canvas.width = window.innerWidth;
+        const adH = adContainer.offsetHeight;
+        height = canvas.height = window.innerHeight - adH;
+        initBackgroundStars();
+    }
+    window.addEventListener('resize', resize);
+    
+    function initBackgroundStars() {
+        stars = [];
+        for(let i=0; i<100; i++) {
+            stars.push({
+                x: Math.random() * width,
+                y: Math.random() * height,
+                size: Math.random() * 1.5,
+                alpha: Math.random()
+            });
+        }
+    }
+
+    // --- INPUT ---
+    const getPos = (e) => {
+        if(e.touches) return {x: e.touches[0].clientX, y: e.touches[0].clientY};
+        return {x: e.clientX, y: e.clientY};
+    };
+
+    const startDraw = (e) => {
+        if (!gameActive) return;
+        if (e.target.closest('#ad-container') || e.target.closest('button')) return;
+        
+        isDrawing = true;
+        points = [];
+        points.push(getPos(e));
+        scoreDisplay.style.opacity = 0;
+    };
+
+    const moveDraw = (e) => {
+        if (!isDrawing) return;
+        const pos = getPos(e);
+        if (pos.y > height) { endDraw(); return; }
+
+        const last = points[points.length - 1];
+        const dist = Math.hypot(pos.x - last.x, pos.y - last.y);
+        if (dist > 8) {
+            points.push(pos);
+            createParticles(pos.x, pos.y, '#fff', 2, 1);
+            if(Math.random() > 0.5) Audio.playDraw();
+        }
+    };
+
+    const endDraw = () => {
+        if (!isDrawing) return;
+        isDrawing = false;
+        if (points.length > 10) {
+            analyzeCircle();
+        } else {
+            createParticles(points[points.length-1].x, points[points.length-1].y, '#555', 5, 2);
+        }
+        points = [];
+    };
+
+    ['mousedown','touchstart'].forEach(e => window.addEventListener(e, startDraw));
+    ['mousemove','touchmove'].forEach(e => window.addEventListener(e, moveDraw));
+    ['mouseup','touchend'].forEach(e => window.addEventListener(e, endDraw));
+
+    // --- CORE LOGIC ---
+    function analyzeCircle() {
+        let sumX = 0, sumY = 0;
+        points.forEach(p => { sumX += p.x; sumY += p.y; });
+        const centerX = sumX / points.length;
+        const centerY = sumY / points.length;
+
+        let totalDist = 0;
+        points.forEach(p => totalDist += Math.hypot(p.x - centerX, p.y - centerY));
+        const meanRadius = totalDist / points.length;
+
+        let totalDeviation = 0;
+        points.forEach(p => {
+            const d = Math.hypot(p.x - centerX, p.y - centerY);
+            totalDeviation += Math.abs(d - meanRadius);
+        });
+
+        const start = points[0];
+        const end = points[points.length - 1];
+        const closureGap = Math.hypot(start.x - end.x, start.y - end.y);
+        const closurePenalty = (closureGap / meanRadius) * 25; 
+        const deviationPercentage = (totalDeviation / points.length) / meanRadius; 
+        let rawScore = 100 - (deviationPercentage * 100 * 3) - closurePenalty;
+        
+        rawScore = Math.max(0, Math.min(100, rawScore));
+        const score = Math.round(rawScore);
+
+        spawnLocalBody(centerX, centerY, meanRadius, score);
+    }
+
+    function spawnLocalBody(x, y, r, score) {
+        let type = 'debris';
+        let color = COLORS.debris;
+        let mass = r * 0.1;
+        let glow = 0;
+
+        // UI Feedback
+        scoreDisplay.innerText = score + "%";
+        scoreDisplay.className = '';
+        scoreDisplay.style.opacity = 1;
+        scoreDisplay.style.transform = 'translate(-50%, -50%) scale(0.5)';
+        
+        requestAnimationFrame(() => {
+            scoreDisplay.style.transition = 'all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)';
+            scoreDisplay.style.transform = 'translate(-50%, -50%) scale(1)';
+        });
+
+        if (score > bestScore) {
+            bestScore = score;
+            localStorage.setItem('genesis_best', bestScore);
+            bestScoreDisplay.innerText = bestScore + "%";
+            createParticles(window.innerWidth/2, 40, COLORS.star, 20, 5);
+        }
+
+        if (score >= 95) {
+            type = 'star';
+            color = COLORS.star;
+            scoreDisplay.classList.add('s-perfect');
+            mass = r * 3;
+            glow = 60;
+            createParticles(x, y, color, 30, 8);
+            screenShake(10);
+            Audio.playSpawn(true);
+        } else if (score >= 80) {
+            type = 'planet';
+            color = COLORS.planet;
+            scoreDisplay.classList.add('s-good');
+            mass = r * 0.8;
+            glow = 15;
+            createParticles(x, y, color, 15, 4);
+            Audio.playSpawn(false);
+        } else {
+            type = 'debris';
+            color = COLORS.debris;
+            scoreDisplay.classList.add('s-bad');
+            createParticles(x, y, color, 8, 2);
+            Audio.playFail();
+            if (score < 50) return;
+        }
+
+        const lastP = points[points.length-1];
+        const prevP = points[points.length-5] || points[0];
+        const vx = (lastP.x - prevP.x) * 0.15;
+        const vy = (lastP.y - prevP.y) * 0.15;
+
+        const bodyData = {
+            x: x, y: y,
+            vx: type === 'star' ? 0 : vx,
+            vy: type === 'star' ? 0 : vy,
+            radius: type === 'star' ? r/2 : r/3.5,
+            mass: mass,
+            color: color,
+            type: type,
+            glow: glow
+        };
+
+        // Add to local simulation
+        addBodyToSim(bodyData);
+
+        // Send to Multiplayer
+        if(type !== 'debris') { // Don't sync debris to save bandwidth
+            broadcastBody(bodyData);
+        }
+    }
+
+    function spawnRemoteBody(data) {
+        // When we receive data from network
+        createParticles(data.x, data.y, COLORS.netBody, 10, 3); // Network spawn effect
+        Audio.playNetSpawn();
+        addBodyToSim(data);
+    }
+
+    function addBodyToSim(data) {
+        bodies.push({
+            ...data,
+            history: [],
+            pulsePhase: Math.random() * Math.PI
+        });
+    }
+
+    // --- VISUAL EFFECTS ---
+    function createParticles(x, y, color, count, speedVar) {
+        for(let i=0; i<count; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const speed = Math.random() * speedVar + 1;
+            particles.push({
+                x: x, y: y,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                life: 1.0,
+                color: color,
+                decay: 0.02 + Math.random() * 0.03
+            });
+        }
+    }
+
+    let shakeIntensity = 0;
+    function screenShake(amount) {
+        shakeIntensity = amount;
+    }
+
+    // --- PHYSICS & LOOP ---
+
+    function update() {
+        if(shakeIntensity > 0) shakeIntensity *= 0.9;
+        if(shakeIntensity < 0.5) shakeIntensity = 0;
+
+        for (let i = 0; i < bodies.length; i++) {
+            let b1 = bodies[i];
+            b1.pulsePhase += 0.05;
+
+            if (frameCount % 4 === 0 && b1.type !== 'debris') {
+                b1.history.push({x:b1.x, y:b1.y});
+                if(b1.history.length > 25) b1.history.shift();
+            }
+
+            for (let j = 0; j < bodies.length; j++) {
+                if (i === j) continue;
+                let b2 = bodies[j];
+                const dx = b2.x - b1.x;
+                const dy = b2.y - b1.y;
+                const dist = Math.hypot(dx, dy);
+
+                if (dist > b1.radius + b2.radius && dist > 10) {
+                    const force = (G * b1.mass * b2.mass) / (dist * dist);
+                    const ax = (force * dx / dist) / b1.mass;
+                    const ay = (force * dy / dist) / b1.mass;
+                    b1.vx += ax;
+                    b1.vy += ay;
+                }
+            }
+
+            if (b1.x < 0 || b1.x > width) b1.vx *= -0.8;
+            if (b1.y < 0 || b1.y > height) b1.vy *= -0.8;
+            
+            if (b1.type === 'star') {
+                b1.vx *= 0.98;
+                b1.vy *= 0.98;
+            }
+
+            b1.x += b1.vx;
+            b1.y += b1.vy;
+        }
+
+        for (let i = particles.length - 1; i >= 0; i--) {
+            let p = particles[i];
+            p.x += p.vx;
+            p.y += p.vy;
+            p.life -= p.decay;
+            if (p.life <= 0) particles.splice(i, 1);
+        }
+        
+        bodyCountDisplay.innerText = bodies.length;
+    }
+
+    let frameCount = 0;
+    function render() {
+        let shakeX = (Math.random() - 0.5) * shakeIntensity;
+        let shakeY = (Math.random() - 0.5) * shakeIntensity;
+        
+        ctx.save();
+        ctx.translate(shakeX, shakeY);
+
+        ctx.fillStyle = 'rgba(5, 5, 5, 0.25)';
+        ctx.fillRect(-shakeIntensity, -shakeIntensity, width + shakeIntensity*2, height + shakeIntensity*2);
+
+        ctx.fillStyle = '#fff';
+        stars.forEach(s => {
+            ctx.globalAlpha = s.alpha * 0.5 + Math.sin(frameCount * 0.05 + s.x) * 0.2;
+            ctx.beginPath();
+            ctx.arc(s.x, s.y, s.size, 0, Math.PI*2);
+            ctx.fill();
+        });
+        ctx.globalAlpha = 1;
+
+        bodies.forEach(b => {
+            if (b.history.length > 1) {
+                ctx.beginPath();
+                ctx.strokeStyle = b.color;
+                ctx.lineWidth = b.type === 'star' ? 2 : 1;
+                ctx.globalAlpha = 0.3;
+                for(let i=0; i<b.history.length-1; i++){
+                    ctx.lineTo(b.history[i].x, b.history[i].y);
+                }
+                ctx.stroke();
+                ctx.globalAlpha = 1;
+            }
+        });
+
+        bodies.forEach(b => {
+            if (b.glow > 0) {
+                const pulse = Math.sin(b.pulsePhase) * 5;
+                ctx.shadowBlur = b.glow + pulse;
+                ctx.shadowColor = b.color;
+            }
+
+            ctx.beginPath();
+            ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2);
+            ctx.fillStyle = b.color;
+            ctx.fill();
+            
+            ctx.shadowBlur = 0;
+            ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+            
+            if(b.type === 'planet') {
+                ctx.beginPath();
+                ctx.arc(b.x, b.y, b.radius * 1.5, b.pulsePhase, b.pulsePhase + Math.PI);
+                ctx.strokeStyle = 'rgba(0, 243, 255, 0.3)';
+                ctx.stroke();
+            }
+        });
+
+        particles.forEach(p => {
+            ctx.fillStyle = p.color;
+            ctx.globalAlpha = p.life;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, 1.5, 0, Math.PI * 2);
+            ctx.fill();
+        });
+        ctx.globalAlpha = 1;
+
+        if (points.length > 1) {
+            ctx.beginPath();
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 3;
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = '#00f3ff';
+            ctx.moveTo(points[0].x, points[0].y);
+            for (let i = 1; i < points.length; i++) {
+                ctx.lineTo(points[i].x, points[i].y);
+            }
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+        }
+        
+        ctx.restore();
+    }
+
+    function loop() {
+        requestAnimationFrame(loop);
+        if (!gameActive) return;
+        frameCount++;
+        update();
+        render();
+    }
+
+    // Init
+    initBackgroundStars();
+    resize();
+    loop();
+
+})();
+</script>
+</body>
+</html>
